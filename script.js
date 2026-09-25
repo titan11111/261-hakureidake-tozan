@@ -81,6 +81,12 @@ function makeTrail(){
   const b0=200*Math.PI/180, r0=1850;
   let px=Math.sin(b0)*r0, pz=-Math.cos(b0)*r0;
   const raw=[]; let s=1,leg=0,prev=null,trav=0; const STEP=3;
+  // 折り返しの隣り合うレッグは、地形グリッド(CELL=20m)が両方の高さを表現できる
+  // だけ離す。近すぎると1セルに高低差の違う道が2本入り、低い側が山に埋まる。
+  // 必要な標高差 = 目標の水平間隔 × その場の地形の傾き（2026-09-26）
+  const MIN_SEP=100;
+  const bslope=(x,z)=>Math.hypot(baseH(x+CELL,z)-baseH(x-CELL,z),baseH(x,z+CELL)-baseH(x,z-CELL))/(2*CELL);
+  let hFlip=baseH(px,pz);
   for(let it=0;it<7000;it++){
     raw.push([px,pz]);
     const r=Math.hypot(px,pz); if(r<5) break;
@@ -100,7 +106,10 @@ function makeTrail(){
     if(best[2]<30&&r>450){const w=.62*Math.sin(trav/70)+.3*Math.sin(trav/24+1),c=Math.cos(w),sn=Math.sin(w);best=[best[0]*c-best[1]*sn,best[0]*sn+best[1]*c,best[2]]}
     trav+=STEP;
     px+=best[0]*STEP; pz+=best[1]*STEP; prev=[best[0],best[1]];
-    if(best[2]>=25){leg+=STEP; if(leg>140){s=-s;leg=0}} else leg=Math.max(0,leg-STEP);
+    if(best[2]>=25){leg+=STEP;
+      const need=Math.max(26,MIN_SEP*bslope(px,pz));
+      if(leg>140&&(h0-hFlip)>=need){s=-s;leg=0;hFlip=h0}
+    } else leg=Math.max(0,leg-STEP);
   }
   raw.push([0,0]);
   // smooth xz
@@ -602,7 +611,11 @@ async function build(){
     const hx=p.x+nx*16,hz=p.z+nz*16,hh=p.h;
     huts.push({name:hd.name,x:hx,z:hz,h:hh,idx,px:p.x,pz:p.z});
     const i0=Math.floor((hx-40+HALF)/CELL),i1=Math.ceil((hx+40+HALF)/CELL),j0=Math.floor((hz-40+HALF)/CELL),j1=Math.ceil((hz+40+HALF)/CELL);
-    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const x=-HALF+i*CELL,z=-HALF+j*CELL;const d=Math.hypot(x-hx,z-hz);const w=1-smooth(12,32,d);H[j*N+i]=lerp(H[j*N+i],hh-.2,w)}
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const x=-HALF+i*CELL,z=-HALF+j*CELL;
+      // 小屋の平坦化パッドが、20m隣を通る別の折り返しレッグを埋めていた（2026-09-26）。
+      // いちばん近い道が小屋から遠い区間なら、その節点は触らない
+      const np2=nearPath(x,z); if(np2.i>=0&&Math.abs(np2.i-idx)>60) continue;
+      const d=Math.hypot(x-hx,z-hz);const w=1-smooth(12,32,d);H[j*N+i]=lerp(H[j*N+i],hh-.2,w)}
   }
 
   // renderer
@@ -709,9 +722,29 @@ async function build(){
       if(i<n&&dil[i]){if(s0<0)s0=i}
       else if(s0>=0){chainSpans.push([s0,i-1]);s0=-1}
     }
+    // 道は地形より下へ潜らせない（2026-09-26）。
+    // 折り返しが近接すると 20m の地形グリッドが両方の高さを表現できず、低い側の道が
+    // 山に埋まって「道が途切れた」ように見えていた（実測 最悪26.9m・全長の36%）。
+    // 地形が道より高い区間では、道をその地形の上まで持ち上げて必ず見える状態にする。
+    const benches=new Float32Array(n),grounds=new Float32Array(n);
+    for(let i=0;i<n;i++){
+      const m=meta[i],c0=heightAt(m.pp.x,m.pp.z);
+      // 道の設計高 pp.h ではなく、実際にできあがった地形の面に沿わせる。
+      // pp.h を下限にすると地形が下がった折り返しで道が宙に浮き（最悪19.8m）、
+      // そのまま使うと地形が上がった折り返しで道が埋まる（最悪26.9m）。地形に沿えば両方消える。
+      // 崖の横断勾配で持ち上がりすぎないよう、左右の端が押し上げてよい量は45cmまでに抑える
+      grounds[i]=c0+Math.min(Math.max(0,Math.max(m.rawL,m.rawR)-c0),.45);
+      benches[i]=grounds[i]+.12;
+    }
+    // 角をならす。ならした結果は必ず [地面+12cm, 地面+45cm] に収め、潜りも浮きも作らない
+    {
+      const nb=benches.slice();
+      for(let i=0;i<n;i++){let a=0,c=0;for(let k=-2;k<=2;k++){const j=clamp(i+k,0,n-1);a+=benches[j];c++}nb[i]=a/c}
+      for(let i=0;i<n;i++)benches[i]=clamp(nb[i],grounds[i]+.12,grounds[i]+.45);
+    }
     for(let i=0;i<n;i++){
       const m=meta[i];
-      const bench=m.pp.h+.12;
+      const bench=benches[i];
       ribbon.push({x:m.pp.x,z:m.pp.z,yL:bench,yR:bench,ux:m.ux,uz:m.uz,hw:m.w,chain:!!dil[i]});
       rp.set([m.lx,bench,m.lz,m.rx,bench,m.rz],i*6);
       ru.set([0,m.pp.dist/3,1,m.pp.dist/3],i*4);
