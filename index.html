@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>白嶺岳 登山口から山頂へ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+<canvas id="gl" tabindex="0" aria-label="登山ゲーム画面"></canvas>
+<div id="vig"></div>
+
+<canvas id="compass" class="hud" width="520" height="72" aria-hidden="true"></canvas>
+
+<div id="card" class="hud" aria-live="polite">
+  <div class="alt"><span id="altV">0</span><small>m</small></div>
+  <div class="meta"><span><b id="clockV">5:20</b></span><span>気温 <b id="tempV">0℃</b></span><span>風 <b id="windV">0m/s</b></span><span>酸素 <b id="o2V">100%</b></span></div>
+  <div class="bar"><span>体力</span><i><b id="stamB"></b></i><em id="stamV">100</em></div>
+  <div class="bar"><span>水</span><i><b id="waterB"></b></i><em id="waterV">1.5L</em></div>
+  <canvas id="prof" width="336" height="92"></canvas>
+  <div class="bar"><span>食料</span><i style="background:none;height:auto;overflow:visible"><span id="foodV" class="food"></span></i><em id="foodN">3個</em></div>
+  <div id="nextV"></div>
+</div>
+
+<div id="topbtns" class="hud">
+  <button class="icon" id="muteBtn" type="button" aria-label="音を消す">音</button>
+  <button class="icon" id="camBtn" type="button" aria-label="視点を切り替える">視</button>
+  <button class="icon" id="pauseBtn" type="button" aria-label="一時停止">Ⅱ</button>
+</div>
+
+<div id="joyHint" class="hud">ここで<br>移動</div>
+<div id="actions" class="hud">
+  <button class="act" id="eatBtn">食べる</button>
+  <button class="act" id="restBtn">小休止</button>
+  <button class="act" id="runBtn">走る</button>
+</div>
+<button id="turboBtn" class="hud act" type="button" aria-pressed="false">倍速</button>
+<button id="lookBtn" class="hud btn" type="button">調べる</button>
+<button id="hutBtn" class="hud btn red" type="button">小屋で休む</button>
+<button id="greetBtn" class="hud btn">こんにちは！</button>
+<button id="shooBtn" class="hud btn red">追い払う</button>
+<div id="bubbles" class="hud"></div>
+<div id="toast" class="hud" role="status"></div>
+<div id="joy"><b></b></div>
+
+<section id="title" class="overlay">
+  <div class="tbox">
+    <h1 class="tate">白嶺岳</h1>
+    <div class="tside">
+      <p class="elev">標高 3,026m</p>
+      <p>霧の樹林帯から歩き出し、雲海を抜けて、初冠雪の山頂をめざす。</p>
+      <p>急登では体力と水が減っていく。途中の山小屋で休みながら、自分のペースで登ろう。</p>
+      <div class="keys" id="keys"></div>
+      <button class="btn red" id="startBtn" type="button" disabled>登山口から登り始める</button>
+      <button class="btn ghost" id="cfgBtn" type="button">操作設定</button>
+      <div id="loading">地形を生成しています</div>
+    </div>
+  </div>
+</section>
+
+<section id="pause" class="overlay" hidden>
+  <div class="panel" data-scrollable>
+    <h2 id="pauseTitle">一時停止</h2>
+    <p class="hint">左で歩く、右で見回す。標識や岩に近づくと「調べる」が押せる。倍速は押すたびに10倍と通常を切り替える。</p>
+    <div class="cfg">
+      <div class="cfgrow"><span>見回す感度</span>
+        <div class="seg" id="lookSeg">
+          <button type="button" data-look="0.7">弱</button>
+          <button type="button" data-look="1" class="on">中</button>
+          <button type="button" data-look="1.45">強</button>
+        </div>
+      </div>
+      <button class="btn ghost" id="invertBtn" type="button">上下反転 オフ</button>
+      <button class="btn ghost" id="vibBtn" type="button">振動 オン</button>
+    </div>
+    <button class="btn" id="resumeBtn" type="button">登山を再開する</button>
+    <button class="btn ghost" id="soundBtn" type="button">音 オン</button>
+    <button class="btn ghost" id="restartBtn" type="button">登山口からやり直す</button>
+  </div>
+</section>
+
+<section id="clear" class="overlay" hidden>
+  <div class="clearbox">
+    <div class="tate">登頂</div>
+    <div>
+      <h3>白嶺岳 山頂 3,026m</h3>
+      <dl id="stats"></dl>
+      <div id="bestV"></div>
+      <div class="row">
+        <button class="btn" id="viewBtn">山頂の景色を見る</button>
+        <button class="btn ghost" id="againBtn">もう一度登る</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="fade"></div>
+
+<script src="three.min.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
