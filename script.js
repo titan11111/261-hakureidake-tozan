@@ -927,17 +927,23 @@ async function build(){
       sign(p.x,p.z,f.p.x,f.p.z,[{t:'白嶺岳 登山案内',s:70},{t:'登山口 → 樺平小屋 → 白嶺小屋 → 山頂',s:28,b:700},{t:'全長 '+(pathLen/1000).toFixed(1)+'km  クマ・落石に注意',s:28,b:700}],2.4,1.2,1.1);
     }else if(p.kind==='stream'){
       const n=40,wp=[],wi=[],wu=[];
+      // 水面も丸太も「生の地形」ではなく「登山道の面(walkY)」を基準にする。
+      // 道は平滑化した pts[i].h+0.12 で地形より最大1.7m浮いており、heightAt基準だと
+      // 水が道を突き抜けて道が途切れ、丸太が道に埋まって見えなくなっていた（2026-09-26修正）
       for(let k=0;k<=n;k++){const o=(k-n/2)*2.2,cx=f.p.x+f.nx*o+Math.sin(k*.7)*1.2*f.tx,cz=f.p.z+f.nz*o+Math.sin(k*.7)*1.2*f.tz;
-        const lift=Math.abs(o)<3?.42:.16;const w=1.1;
+        const t=smooth(1.2,4,Math.abs(o));            // 0=道の上 / 1=道から離れた場所
+        const yAt=(x,z)=>walkY(x,z)+(t*.14-(1-t)*.34); // 道の下を34cmくぐり、道の外では地形+16cm
+        const w=2.3;                                   // 沢幅4.6m。道幅2.5mより広いので前後に水が見える
         const ax=cx+f.tx*w,az=cz+f.tz*w,bx=cx-f.tx*w,bz=cz-f.tz*w;
-        wp.push(ax,heightAt(ax,az)+lift,az,bx,heightAt(bx,bz)+lift,bz);wu.push(0,k*.6,1,k*.6);
+        wp.push(ax,yAt(ax,az),az,bx,yAt(bx,bz),bz);wu.push(0,k*.6,1,k*.6);
         if(k<n)wi.push(k*2,k*2+1,k*2+2,k*2+1,k*2+3,k*2+2);
         if(k%3===0&&Math.abs(o)>3){boulder(cx+f.tx*(1.6+Math.random()),cz+f.tz*(1.6+Math.random()),.4+Math.random()*.6,mossM);boulder(cx-f.tx*(1.6+Math.random()),cz-f.tz*(1.6+Math.random()),.4+Math.random()*.5)}}
       const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(wp,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(wu,2));g.setIndex(wi);g.computeVertexNormals();
       const wm=new THREE.MeshStandardMaterial({color:C('#6f98a6'),roughness:.08,metalness:.2,map:flowTex,transparent:true,opacity:.88,side:THREE.DoubleSide});
       const wmesh=new THREE.Mesh(g,wm);wmesh.receiveShadow=true;scene.add(wmesh);
-      for(const d of [-.35,.35]){add(new THREE.CylinderGeometry(.22,.26,5,8),logM,f.p.x+f.nx*d,heightAt(f.p.x,f.p.z)+.62,f.p.z+f.nz*d,{r:[Math.PI/2,Math.atan2(f.tx,f.tz),0]}).rotation.order='YXZ';
-        treads.push({x:f.p.x+f.nx*d,z:f.p.z+f.nz*d,tx:f.tx,tz:f.tz,nx:f.nx,nz:f.nz,along:2.55,across:.3,top:heightAt(f.p.x,f.p.z)+.96});}
+      const bY=walkY(f.p.x,f.p.z);  // 登山道の面。丸太はこの上に載せる
+      for(const d of [-.62,.62]){add(new THREE.CylinderGeometry(.3,.34,6.2,9),logM,f.p.x+f.nx*d,bY+.24,f.p.z+f.nz*d,{r:[Math.PI/2,Math.atan2(f.tx,f.tz),0]}).rotation.order='YXZ';
+        treads.push({x:f.p.x+f.nx*d,z:f.p.z+f.nz*d,tx:f.tx,tz:f.tz,nx:f.nx,nz:f.nz,along:3.1,across:.36,top:bY+.5});}
       LM.stream={x:f.p.x,z:f.p.z};
     }else if(p.kind==='jizo'){
       add(new THREE.BoxGeometry(.9,.25,.7),stoneG,p.x,y+.1,p.z);
@@ -1252,37 +1258,21 @@ function update(dt){
   let moved=0,grade=0;
   if(il>.05&&!S.resting){
     let sp=S.exhausted?2.6:(running?11.5:7.2);
-    if(!onPath)sp*=.72;
     const h0=walkY(S.x,S.z),probe=1.2;
     const px=S.x+mx/il*probe,pz=S.z+mz/il*probe;
     const gTest=(walkY(px,pz)-h0)/probe;
-    const gLim=running?.35:.48;
     if(!running&&gTest>.32)sp*=clamp(1-(gTest-.32), .55, 1);
     else sp*=clamp(Math.exp(-1.3*Math.abs(gTest+.05))/Math.exp(-.065),.45,1.1);
     let step1=sp*il*dt;
     const hops=turbo?10:1;
-    let nx=S.x,nz=S.z,blocked=false;
+    let nx=S.x,nz=S.z;
+    // 行動制限は全廃止（2026-09-26）。斜面の傾き・段差・木や岩では止まらない。
+    // 地図の外へ落ちるのだけは防ぐが、トーストは出さず無言で押し戻す
     for(let hop=0;hop<hops;hop++){
-      const sx0=nx,sz0=nz,baseY=walkY(sx0,sz0);
-      let tx=sx0+mx/il*step1,tz=sz0+mz/il*step1;
-      // 勾配は1.2m先で測る。1フレームぶんの差で割ると、道の縁の22cmの段差が壁になる
-      const ok=(x,z)=>{
-        if(Math.hypot(x,z)>=BOUND||hitSolid(x,z,BODY))return false;
-        const dx=x-sx0,dz=z-sz0,dl=Math.hypot(dx,dz);
-        if(dl<1e-5)return true;
-        const PR=1.2,g=(walkY(sx0+dx/dl*PR,sz0+dz/dl*PR)-baseY)/PR;
-        return g<gLim&&(walkY(x,z)-baseY)<=.45;
-      };
-      if(!ok(tx,tz)){
-        const ax=sx0+mx/il*step1,az=sz0,bx=sx0,bz=sz0+mz/il*step1;
-        if(ok(ax,az)){tx=ax;tz=az}else if(ok(bx,bz)){tx=bx;tz=bz}else{
-          tx=sx0;tz=sz0;blocked=true;
-          if(hop===0&&T-S.steepWarn>3){S.steepWarn=T;const ahead=hitSolid(S.x+mx/il*.7,S.z+mz/il*.7,BODY);
-            toast(ahead?'木や岩が行く手をふさいでいる':(Math.hypot(S.x,S.z)>=BOUND-5?'この先は深い谷。引き返そう':(running&&gTest>.7?'急すぎて走れない。ゆっくりなら登れる':'岩壁が急すぎて登れない。登山道を探そう')))}
-        }
-      }
+      let tx=nx+mx/il*step1,tz=nz+mz/il*step1;
+      const rr=Math.hypot(tx,tz);
+      if(rr>=BOUND){const k=(BOUND-.5)/rr;tx*=k;tz*=k}
       nx=tx;nz=tz;
-      if(blocked)break;
     }
     moved=Math.hypot(nx-S.x,nz-S.z);
     if(moved>0){grade=(walkY(nx,nz)-h0)/moved}
