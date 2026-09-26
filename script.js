@@ -3,6 +3,8 @@
 const $=id=>document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 if(isTouch) document.body.classList.add('touch');
+// 携帯（タッチ操作）だけ、三人称カメラを50%遠くへ引く。PCは従来どおり
+const CAM_PULL = isTouch ? 1.5 : 1;
 $('keys').textContent = '';
 $('keys').append(
   document.createTextNode(isTouch
@@ -1361,7 +1363,7 @@ function update(dt){
     if(!S.cam)S.cam=new THREE.Vector3(cx,cy,cz);else S.cam.lerp(_v.set(cx,cy,cz),Math.min(1,dt*4));
     camera.position.copy(S.cam);camera.lookAt(hutFrame.x,hutFrame.h+3.1,hutFrame.z);
   }else if(S.view===3||intro>0){
-    const pp=clamp(S.pitch,-1.05,.42),dist=(S.resting?3.6:(running?4.9:4.3))+intro*13;
+    const pp=clamp(S.pitch,-1.05,.42),dist=(S.resting?3.6:(running?4.9:4.3))*CAM_PULL+intro*13;
     const sw=S.yaw+intro*.34,bx=Math.sin(sw),bz=Math.cos(sw),ty=feet+(S.resting?1.05:1.5);
     let cx=S.x+bx*dist*Math.cos(pp),cz=S.z+bz*dist*Math.cos(pp),cy=ty-dist*Math.sin(pp)+.3+intro*6.5;
     cy=Math.max(cy,walkY(cx,cz)+.45,walkY((cx+S.x)/2,(cz+S.z)/2)+.6);
